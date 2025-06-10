@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitorování URL</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 30px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .container { 
+            display: flex; 
+            gap: 30px; 
+        }
+        .main { 
+            flex: 2; 
+        }
+        .history { 
+            flex: 1; 
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .active-checks {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-indicator { 
+            padding: 8px 15px; 
+            border-radius: 20px; 
+            font-weight: bold; 
+            margin-left: 10px;
+        }
+        .status-active { background: #28a745; color: white; }
+        .status-inactive { background: #dc3545; color: white; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.9;
+        }
+        .active-checks-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .active-checks-table th, 
+        .active-checks-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .active-checks-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        .active-checks-table tr:hover { 
+            background: #f5f5f5; 
+        }
+        .ping-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+        .ping-success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .ping-error {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .history-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 3px solid #007bff;
+        }
+        .empty-state {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            padding: 20px;
+        }
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        .flash-message {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .flash-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .flash-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛠️ Monitorování URL</h1>
+        <div>
+            {% if username %}
+                <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('logout') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">🚪 Odhlásit se</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="container">
+        <div class="main">
+            <!-- Formulář pro nový monitoring -->
+            <div class="controls">
+                <h2>🚀 Nový monitoring</h2>
+                <form id="monitorForm">
+                    <div class="form-group">
+                        <label for="urlInput">URL adresa:</label>
+                        <input type="url" id="urlInput" placeholder="https://example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="intervalSelect">Interval kontroly:</label>
+                        <select id="intervalSelect">
+                            <option value="1">🕐 1 sekunda</option>
+                            <option value="5">🕔 5 sekund</option>
+                            <option value="60">🕛 1 minuta</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="startMonitoring()">
+                        ▶️ Spustit monitoring
+                    </button>
+                </form>
+            </div>
+
+            <!-- Tabulka aktivních checků -->
+            <div class="active-checks">
+                <h2>📊 Aktivní checky</h2>
+                <table class="active-checks-table" id="activeChecksTable">
+                    <thead>
+                        <tr>
+                            <th>URL</th>
+                            <th>Interval</th>
+                            <th>Poslední výsledek</th>
+                            <th>Akce</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeChecksBody">
+                        {% for check_id, data in active_checks.items() %}
+                        <tr id="row-{{ check_id }}">
+                            <td>{{ data.url }}</td>
+                            <td>{{ data.interval }}s</td>
+                            <td id="status-{{ check_id }}">🟢 Aktivní</td>
+                            <td>
+                                <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">
+                                    ⏹️ Zastavit
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not active_checks %}
+                        <tr id="emptyRow">
+                            <td colspan="4" class="empty-state">Žádné aktivní checky</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Live výsledky -->
+            <div class="active-checks" style="margin-top: 20px;">
+                <h2>📡 Live výsledky</h2>
+                <div id="liveResults">
+                    <div class="empty-state">Výsledky se zobrazí po spuštění monitoringu</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="history">
+            <h2>📜 Historie pingů</h2>
+            <div id="historyContainer">
+                {% if history %}
+                    {% for item in history %}
+                    <div class="history-item">
+                        <small>[{{ item.timestamp }}]</small><br>
+                        <strong>{{ item.url }}</strong><br>
+                        {% if item.status == 'success' %}
+                            <span style="color:#28a745;">✅ OK ({{ item.response_time }}ms)</span>
+                        {% else %}
+                            <span style="color:#dc3545;">❌ Chyba: {{ item.message }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">Žádná historie</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let isMonitoring = false;
+
+        // Připojení k SocketIO
+        socket.on('connect', function() {
+            console.log('Připojeno k serveru');
+            socket.emit('get_active_checks');
+            socket.emit('get_history');
+        });
+
+        // Nový check byl spuštěn
+        socket.on('check_started', function(data) {
+            console.log('Check spuštěn:', data);
+            
+            // Odstranit prázdný řádek pokud existuje
+            const emptyRow = document.getElementById('emptyRow');
+            if (emptyRow) {
+                emptyRow.remove();
+            }
+            
+            // Přidat nový řádek do tabulky
+            const tbody = document.getElementById('activeChecksBody');
+            const newRow = document.createElement('tr');
+            newRow.id = `row-${data.check_id}`;
+            newRow.innerHTML = `
+                <td>${data.url}</td>
+                <td>${data.interval}s</td>
+                <td id="status-${data.check_id}">🟢 Aktivní</td>
+                <td>
+                    <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">
+                        ⏹️ Zastavit
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(newRow);
+            
+            // Vyčistit formulář
+            document.getElementById('urlInput').value = '';
+        });
+
+        // Check byl zastaven
+        socket.on('check_stopped', function(data) {
+            console.log('Check zastaven:', data);
+            const row = document.getElementById(`row-${data.check_id}`);
+            if (row) {
+                row.remove();
+            }
+            
+            // Přidat prázdný řádek pokud už nejsou žádné checky
+            const tbody = document.getElementById('activeChecksBody');
+            if (tbody.children.length === 0) {
+                tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+            }
+        });
+
+        // Aktualizace výsledku pingu
+        socket.on('ping_update', function(data) {
+            console.log('Ping update:', data);
+            
+            // Aktualizovat status v tabulce
+            const statusCell = document.getElementById(`status-${data.check_id}`);
+            if (statusCell) {
+                if (data.status === 'success') {
+                    statusCell.innerHTML = `🟢 OK (${data.time}ms)`;
+                } else {
+                    statusCell.innerHTML = `🔴 Chyba`;
+                }
+            }
+            
+            // Přidat do live výsledků
+            const liveResults = document.getElementById('liveResults');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = data.status === 'success' ? 'ping-result ping-success' : 'ping-result ping-error';
+            
+            if (data.status === 'success') {
+                resultDiv.innerHTML = `
+                    <strong>[${data.timestamp}]</strong> ${data.url}<br>
+                    ✅ Status: ${data.code} | Odezva: ${data.time}ms
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <strong>[${data.timestamp}]</strong> ${data.url}<br>
+                    ❌ Chyba: ${data.message}
+                `;
+            }
+            
+            // Vložit na začátek a omezit počet zobrazených výsledků
+            if (liveResults.firstChild && liveResults.firstChild.className === 'empty-state') {
+                liveResults.innerHTML = '';
+            }
+            liveResults.insertBefore(resultDiv, liveResults.firstChild);
+            
+            // Omezit na posledních 20 výsledků
+            while (liveResults.children.length > 20) {
+                liveResults.removeChild(liveResults.lastChild);
+            }
+        });
+
+        // Aktualizace historie
+        socket.on('history_update', function(history) {
+            const container = document.getElementById('historyContainer');
+            if (history.length === 0) {
+                container.innerHTML = '<div class="empty-state">Žádná historie</div>';
+                return;
+            }
+            
+            container.innerHTML = history.map(item => `
+                <div class="history-item">
+                    <small>[${item.timestamp}]</small><br>
+                    <strong>${item.url}</strong><br>
+                    ${item.status === 'success' 
+                        ? `<span style="color:#28a745;">✅ OK (${item.response_time}ms)</span>`
+                        : `<span style="color:#dc3545;">❌ Chyba: ${item.message}</span>`}
+                </div>
+            `).join('');
+        });
+
+        // Funkce pro spuštění monitoringu
+        function startMonitoring() {
+            const url = document.getElementById('urlInput').value;
+            const interval = document.getElementById('intervalSelect').value;
+            
+            if (!url) {
+                alert('Zadejte platnou URL adresu!');
+                return;
+            }
+            
+            socket.emit('start_monitoring', {
+                url: url,
+                interval: interval
+            });
+        }
+
+        // Funkce pro zastavení monitoringu
+        function stopMonitoring(checkId) {
+            socket.emit('stop_monitoring', {
+                check_id: checkId
+            });
+        }
+
+        // Automaticky načíst historii při načtení stránky
+        window.addEventListener('load', function() {
+            socket.emit('get_history');
+        });
+    </script>
+</body>
+</html>

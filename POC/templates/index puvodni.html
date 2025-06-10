@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Live URL Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        :root {
+            --color-success: #28a745;
+            --color-error: #dc3545;
+            --color-info: #17a2b8;
+        }
+        body { font-family: 'Segoe UI', sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .monitoring-panel { display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
+        .controls { background: #f8f9fa; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .history { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .status-indicator { padding: 8px 15px; border-radius: 20px; font-weight: bold; }
+        .status-active { background: var(--color-success); color: white; }
+        .status-inactive { background: var(--color-error); color: white; }
+        .live-results { margin-top: 20px; }
+        .alert { padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+        .alert-success { background: var(--color-success); color: white; }
+        .alert-error { background: var(--color-error); color: white; }
+        .history-list { list-style: none; padding: 0; }
+        .history-item { padding: 10px; margin-bottom: 8px; background: #f8f9fa; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛠️ Live URL Monitor</h1>
+        <div>
+            {% if username %}
+                <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('logout') }}" style="margin-left:15px;color:var(--color-info);text-decoration:none;">🚪 Odhlásit</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="monitoring-panel">
+        <div class="controls">
+            <div class="status-indicator status-inactive" id="statusIndicator">❌ Neaktivní</div>
+            
+            <form id="monitorForm" style="margin-top:20px;">
+                <input type="url" id="urlInput" placeholder="https://example.com" required 
+                       style="width:100%; padding:10px; margin-bottom:10px;">
+                
+                <select id="intervalSelect" style="width:100%; padding:10px; margin-bottom:10px;">
+                    <option value="1">🕐 1 sekunda</option>
+                    <option value="5">🕔 5 sekund</option>
+                    <option value="60">🕛 1 minuta</option>
+                </select>
+                
+                <button type="button" id="toggleButton" 
+                        style="width:100%; padding:10px; background:var(--color-info); color:white; border:none; border-radius:5px;">
+                    ▶️ Spustit monitoring
+                </button>
+            </form>
+
+            <div class="live-results" id="liveResults"></div>
+        </div>
+
+        <div class="history">
+            <h2>📜 Historie kontrol</h2>
+            <ul class="history-list" id="historyList">
+                {% for item in history %}
+                    <li class="history-item">
+                        <small>[{{ item.timestamp }}]</small><br>
+                        <strong>{{ item.url }}</strong><br>
+                        {% if item.status == 'success' %}
+                            <span style="color:var(--color-success);">✅ OK ({{ item.response_time }}ms)</span>
+                        {% else %}
+                            <span style="color:var(--color-error);">❌ Chyba: {{ item.message }}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let isMonitoring = false;
+        
+        document.getElementById('toggleButton').addEventListener('click', function() {
+            const url = document.getElementById('urlInput').value;
+            const interval = document.getElementById('intervalSelect').value;
+            
+            if (!isMonitoring) {
+                if (!url) return alert("Zadejte platnou URL!");
+                socket.emit('start_monitoring', { url, interval });
+            } else {
+                socket.emit('stop_monitoring');
+            }
+        });
+
+        socket.on('status_update', data => {
+            const indicator = document.getElementById('statusIndicator');
+            const button = document.getElementById('toggleButton');
+            
+            if (data.status === 'active') {
+                indicator.className = 'status-indicator status-active';
+                indicator.innerHTML = `✅ Aktivní (${data.url}, každých ${data.interval}s)`;
+                button.innerHTML = '⏹️ Zastavit monitoring';
+                button.style.background = 'var(--color-error)';
+                isMonitoring = true;
+            } else {
+                indicator.className = 'status-indicator status-inactive';
+                indicator.innerHTML = '❌ Neaktivní';
+                button.innerHTML = '▶️ Spustit monitoring';
+                button.style.background = 'var(--color-info)';
+                isMonitoring = false;
+            }
+        });
+
+        socket.on('ping_update', data => {
+            const resultsDiv = document.getElementById('liveResults');
+            const entry = document.createElement('div');
+            entry.className = `alert ${data.status === 'success' ? 'alert-success' : 'alert-error'}`;
+            entry.innerHTML = `
+                <strong>${data.timestamp}</strong><br>
+                ${data.status === 'success' 
+                    ? `Status: ${data.code} ⏱️ ${data.time}ms` 
+                    : `Chyba: ${data.message}`}
+            `;
+            resultsDiv.prepend(entry);
+            
+            // Automaticky aktualizovat historii
+            socket.emit('get_history');
+        });
+
+        socket.on('history_update', history => {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = history.map(item => `
+                <li class="history-item">
+                    <small>[${item.timestamp}]</small><br>
+                    <strong>${item.url}</strong><br>
+                    ${item.status === 'success' 
+                        ? `<span style="color:var(--color-success);">✅ OK (${item.response_time}ms)</span>`
+                        : `<span style="color:var(--color-error);">❌ Chyba: ${item.message}</span>`}
+                </li>
+            `).join('');
+        });
+
+        // Načíst historii při startu
+        window.onload = () => socket.emit('get_history');
+    </script>
+</body>
+</html>

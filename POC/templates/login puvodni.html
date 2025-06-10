@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Přihlášení</title>
+    <style>
+        .login-container { max-width: 400px; margin: 50px auto; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 8px; }
+        button { background: #17a2b8; color: white; padding: 10px; border: none; width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>🔑 Přihlášení</h2>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div style="color:red; margin-bottom:15px;">
+                    {{ messages[0] }}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <form method="POST">
+            <div class="form-group">
+                <input type="text" name="username" placeholder="Uživatelské jméno" required>
+            </div>
+            <div class="form-group">
+                <input type="password" name="password" placeholder="Heslo" required>
+            </div>
+            <button type="submit">Přihlásit se</button>
+        </form>
+    </div>
+</body>
+</html>

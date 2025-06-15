@@ -197,14 +197,6 @@
                             <option value="60">🕛 1 minuta</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="thresholdInput">Počet chyb pro notifikaci:</label>
-                        <input type="number" id="thresholdInput" value="3" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="emailInput">E-mail pro notifikace:</label>
-                        <input type="email" id="emailInput" placeholder="user@example.com">
-                    </div>
                     <button type="button" class="btn btn-primary" onclick="startMonitoring()">
                         ▶️ Spustit monitoring
                     </button>
@@ -231,6 +223,7 @@
                             <td id="status-{{ check_id }}">🟢 Aktivní</td>
                             <td>
                                 <button class="btn btn-primary" onclick="window.location.href='{{ url_for('check_settings', check_id=check_id) }}'">⚙️ Nastavení</button>
+                                <button class="btn btn-primary" onclick="pauseMonitoring('{{ check_id }}')">⏸️ Pozastavit</button>
                                 <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">⏹️ Zastavit</button>
                             </td>
                         </tr>
@@ -306,6 +299,7 @@
                 <td id="status-${data.check_id}">🟢 Aktivní</td>
                 <td>
                     <button class="btn btn-primary" onclick="window.location.href='/check/${data.check_id}'">⚙️ Nastavení</button>
+                    <button class="btn btn-primary" onclick="pauseMonitoring('${data.check_id}')">⏸️ Pozastavit</button>
                     <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">⏹️ Zastavit</button>
                 </td>
             `;
@@ -313,8 +307,6 @@
             
             // Vyčistit formulář
             document.getElementById('urlInput').value = '';
-            document.getElementById('thresholdInput').value = '3';
-            document.getElementById('emailInput').value = '';
         });
 
         // Check byl zastaven
@@ -329,6 +321,14 @@
             const tbody = document.getElementById('activeChecksBody');
             if (tbody.children.length === 0) {
                 tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+            }
+        });
+
+        // Check byl pozastaven
+        socket.on('check_paused', function(data) {
+            const statusCell = document.getElementById(`status-${data.check_id}`);
+            if (statusCell) {
+                statusCell.innerHTML = '⏸️ Pozastaveno';
             }
         });
 
@@ -404,14 +404,17 @@
                 return;
             }
             
-            const threshold = document.getElementById('thresholdInput').value;
-            const email = document.getElementById('emailInput').value;
-
             socket.emit('start_monitoring', {
                 url: url,
-                interval: interval,
-                threshold: threshold,
-                email: email
+                interval: interval
+            });
+        }
+
+        // Funkce pro pozastavení monitoringu
+        function pauseMonitoring(checkId) {
+            socket.emit('pause_monitoring', {
+                check_id: checkId,
+                minutes: 1
             });
         }
 

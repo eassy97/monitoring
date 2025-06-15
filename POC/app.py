@@ -21,8 +21,11 @@ STATUS_LOG = "monitoring_status.log"
 ACTIVE_CHECKS_FILE = "active_checks.json"
 
 # Globální data structures
-# {check_id: {url, interval, user, stop_event, thread,
-#             error_threshold, notify_email, error_count}}
+# {check_id: {
+#     url, interval, user, stop_event, thread,
+#     error_threshold, notify_email, error_count,
+#     paused_until
+# }}
 active_checks = {}
 
 # Inicializace souborů
@@ -250,6 +253,36 @@ def stop_check(check_id: str):
         del active_checks[check_id]
         save_active_checks()
 
+def pause_check(check_id: str, minutes: int):
+    """Pozastaví check na daný počet minut"""
+    if check_id in active_checks:
+        data = active_checks[check_id]
+        data["stop_event"].set()
+        data["thread"].join(timeout=1)
+        data["paused_until"] = time.time() + minutes * 60
+        data["status"] = "paused"
+        save_active_checks()
+        socketio.emit("check_paused", {"check_id": check_id})
+
+def resume_worker():
+    """Průběžně kontroluje pozastavené checky a případně je spouští"""
+    while True:
+        now = time.time()
+        for check_id, data in list(active_checks.items()):
+            pause_until = data.get("paused_until")
+            if pause_until and now >= pause_until:
+                start_check(
+                    data["url"],
+                    data["interval"],
+                    data["user"],
+                    check_id,
+                    data.get("error_threshold", 3),
+                    data.get("notify_email", ""),
+                )
+                data.pop("paused_until", None)
+                data.pop("status", None)
+        time.sleep(1)
+
 # Flask routes
 @app.route('/')
 def index():
@@ -292,14 +325,21 @@ def check_settings(check_id):
     check = active_checks[check_id]
 
     if request.method == 'POST':
-        interval = int(request.form.get('interval', check['interval']))
-        threshold = int(request.form.get('threshold', check.get('error_threshold', 3)))
-        email = request.form.get('email', check.get('notify_email', ''))
+        action = request.form.get('action', 'save')
+        if action == 'pause':
+            minutes = int(request.form.get('pause_minutes', 1))
+            pause_check(check_id, minutes)
+            flash('Check pozastaven', 'info')
+            return redirect(url_for('check_settings', check_id=check_id))
+        else:
+            interval = int(request.form.get('interval', check['interval']))
+            threshold = int(request.form.get('threshold', check.get('error_threshold', 3)))
+            email = request.form.get('email', check.get('notify_email', ''))
 
-        stop_check(check_id)
-        start_check(check['url'], interval, check['user'], check_id, threshold, email)
-        flash('Nastavení uloženo', 'info')
-        return redirect(url_for('check_settings', check_id=check_id))
+            stop_check(check_id)
+            start_check(check['url'], interval, check['user'], check_id, threshold, email)
+            flash('Nastavení uloženo', 'info')
+            return redirect(url_for('check_settings', check_id=check_id))
 
     history = load_check_history(check_id)
     return render_template('check_settings.html', check_id=check_id, check=check, history=history)
@@ -312,8 +352,8 @@ def handle_start_monitoring(data):
     
     url = data['url']
     interval = int(data['interval'])
-    threshold = int(data.get('threshold', 3))
-    email = data.get('email', '')
+    threshold = 3
+    email = ''
     user = session['username']
 
     check_id = start_check(url, interval, user, None, threshold, email)
@@ -323,6 +363,12 @@ def handle_start_monitoring(data):
         'url': url,
         'interval': interval
     })
+
+@socketio.on('pause_monitoring')
+def handle_pause_monitoring(data):
+    check_id = data['check_id']
+    minutes = int(data.get('minutes', 1))
+    pause_check(check_id, minutes)
 
 @socketio.on('stop_monitoring')
 def handle_stop_monitoring(data):
@@ -345,4 +391,5 @@ def handle_get_active_checks():
 if __name__ == '__main__':
     # Načti aktivní checky při startu
     load_active_checks()
+    threading.Thread(target=resume_worker, daemon=True).start()
     socketio.run(app, host='127.0.0.1', port=5050, debug=True)

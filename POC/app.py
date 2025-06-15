@@ -430,6 +430,10 @@ def check_settings(check_id):
             pause_check(check_id, minutes)
             flash('Check pozastaven', 'info')
             return redirect(url_for('check_settings', check_id=check_id))
+        elif action == 'delete':
+            stop_check(check_id)
+            flash(f"Check '{check.get('name','')}' na {check['url']} (interval {check['interval']}s) byl smazán", 'info')
+            return redirect(url_for('index'))
         else:
             interval = int(request.form.get('interval', check['interval']))
             threshold = int(request.form.get('threshold', check.get('error_threshold', 3)))
@@ -441,18 +445,42 @@ def check_settings(check_id):
             flash('Nastavení uloženo', 'info')
             return redirect(url_for('check_settings', check_id=check_id))
 
-    history = load_check_history(check_id)
-    stats = compute_check_stats(check, history)
-    chart_labels = [h['timestamp'].split(' ')[1] for h in history[-20:]][::-1]
-    chart_times = [float(h['response_time']) for h in history[-20:]][::-1]
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    sort = request.args.get('sort', 'desc')
+
+    history_all = load_check_history(check_id)
+    if sort == 'asc':
+        history_all = list(reversed(history_all))
+
+    total = len(history_all)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    history = history_all[start_idx:end_idx]
+
+    stats = compute_check_stats(check, history_all)
+    chart_labels = [h['timestamp'].split(' ')[1] for h in history_all[-20:]][::-1]
+    chart_times = [float(h['response_time']) for h in history_all[-20:]][::-1]
+
+    paused_until = None
+    if check.get('paused_until'):
+        paused_until = datetime.fromtimestamp(check['paused_until']).strftime('%H:%M:%S')
+
     return render_template(
         'check_settings.html',
         check_id=check_id,
         check=check,
         history=history,
+        page=page,
+        pages=pages,
+        per_page=per_page,
+        sort=sort,
         stats=stats,
         chart_labels=json.dumps(chart_labels),
-        chart_times=json.dumps(chart_times)
+        chart_times=json.dumps(chart_times),
+        paused_until=paused_until
     )
 
 @app.route('/advanced_settings', methods=['GET', 'POST'])

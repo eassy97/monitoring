@@ -7,6 +7,7 @@
         body {font-family: Arial, sans-serif; padding:20px; background:#f5f5f5;}
         .grid {display:grid; grid-template-columns: repeat(2,1fr); gap:20px;}
         .panel {background:white; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+        .header {display:flex;justify-content:space-between;align-items:center;background:white;padding:15px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-bottom:20px;}
         .form-group {margin-bottom:15px;}
         label{display:block;font-weight:bold;margin-bottom:5px;}
         input, textarea {width:100%; padding:8px; border:1px solid #ddd; border-radius:5px; box-sizing:border-box;}
@@ -14,6 +15,16 @@
     </style>
 </head>
 <body>
+    <div class="header">
+        <h1>🛠️ Monitorování URL</h1>
+        <div>
+            {% if username %}
+                <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('advanced_settings') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">⚙️ Pokročilé nastavení</a>
+                <a href="{{ url_for('logout') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">🚪 Odhlásit se</a>
+            {% endif %}
+        </div>
+    </div>
     <h1>Pokročilé nastavení notifikací</h1>
     <form method="POST" class="grid">
         <div class="panel">
@@ -49,6 +60,41 @@
             <div class="form-group">
                 <label>Heslo</label>
                 <input type="password" name="smtp_pass" value="{{ settings.smtp.password }}">
+            </div>
+        </div>
+        <div class="panel">
+            <h3>Nastavení popupů</h3>
+            <div class="form-group">
+                <label>Info šířka</label>
+                <input type="number" name="info_width" value="{{ popup.info.width }}">
+            </div>
+            <div class="form-group">
+                <label>Info výška</label>
+                <input type="number" name="info_height" value="{{ popup.info.height }}">
+            </div>
+            <div class="form-group">
+                <label>Info barva</label>
+                <input type="text" name="info_color" value="{{ popup.info.color }}">
+            </div>
+            <div class="form-group">
+                <label>Info text</label>
+                <input type="text" name="info_text" value="{{ popup.info.text }}">
+            </div>
+            <div class="form-group">
+                <label>Delete šířka</label>
+                <input type="number" name="del_width" value="{{ popup.delete.width }}">
+            </div>
+            <div class="form-group">
+                <label>Delete výška</label>
+                <input type="number" name="del_height" value="{{ popup.delete.height }}">
+            </div>
+            <div class="form-group">
+                <label>Delete barva</label>
+                <input type="text" name="del_color" value="{{ popup.delete.color }}">
+            </div>
+            <div class="form-group">
+                <label>Delete text</label>
+                <input type="text" name="del_text" value="{{ popup.delete.text }}">
             </div>
         </div>
         <div style="grid-column:1/span 2;text-align:center;">

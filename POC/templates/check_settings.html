@@ -13,6 +13,7 @@
         .grid-container {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
+            grid-auto-rows: 1fr;
             gap: 20px;
         }
         .panel {
@@ -20,6 +21,7 @@
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            height: 100%;
         }
         .info-grid {
             display: grid;
@@ -85,8 +87,14 @@
 </head>
 <body>
     <div class="header">
-        <h1>Detail checku</h1>
-        <a href="{{ url_for('index') }}">🏠 Domů</a>
+        <h1>🛠️ Monitorování URL</h1>
+        <div>
+            {% if username %}
+                <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('advanced_settings') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">⚙️ Pokročilé nastavení</a>
+                <a href="{{ url_for('logout') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">🚪 Odhlásit se</a>
+            {% endif %}
+        </div>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}
@@ -193,7 +201,7 @@
                 </label>
                 <input type="hidden" name="page" value="{{ page }}">
             </form>
-            <table>
+            <table id="historyTable">
                 <thead>
                     <tr>
                         <th>Čas</th>
@@ -220,15 +228,22 @@
                 <a href="{{ url_for('check_settings', check_id=check_id, page=page-1 if page>1 else 1, per_page=per_page, sort=sort) }}">&laquo; Předchozí</a>
                 <span>Stránka {{ page }} / {{ pages }}</span>
                 <a href="{{ url_for('check_settings', check_id=check_id, page=page+1 if page<pages else pages, per_page=per_page, sort=sort) }}">Další &raquo;</a>
+                <button type="button" class="btn" onclick="refreshHistory()" style="margin-left:15px;">🔄 Refresh</button>
             </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        function showPopup(msg) {
+        const popupConfig = {{ popup | tojson }};
+        const currentCheck = '{{ check_id }}';
+        function showPopup(msg, type='info') {
+            const cfg = popupConfig[type] || popupConfig.info;
             const div = document.createElement('div');
-            div.className = 'popup popup-info';
-            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>${msg}`;
+            div.className = 'popup';
+            div.style.background = cfg.color;
+            div.style.width = cfg.width + 'px';
+            div.style.height = cfg.height + 'px';
+            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>` + cfg.text.replace('{message}', msg);
             document.body.appendChild(div);
             setTimeout(()=>div.remove(), 3000);
         }
@@ -274,6 +289,23 @@
         }
         emailInput.addEventListener('input', renderTags);
         renderTags();
+
+        async function refreshHistory() {
+            const resp = await fetch(`/check/${currentCheck}/history_json?page={{ page }}&per_page={{ per_page }}&sort={{ sort }}`);
+            const data = await resp.json();
+            const tbody = document.querySelector('#historyTable tbody');
+            tbody.innerHTML = '';
+            for (const item of data.history) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${item.timestamp}</td><td>${item.status}</td><td>${item.response_time}ms</td><td>${item.message}</td>`;
+                tbody.appendChild(tr);
+            }
+            if (data.history.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="4">Žádné záznamy</td>';
+                tbody.appendChild(tr);
+            }
+        }
     </script>
 </body>
 </html>

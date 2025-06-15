@@ -43,6 +43,7 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+            width: 33%;
         }
         .active-checks {
             background: white;
@@ -231,7 +232,7 @@
                             <td>
                                 <button class="btn btn-primary" onclick="window.location.href='{{ url_for('check_settings', check_id=check_id) }}'">⚙️ Nastavení</button>
                                 <button class="btn btn-primary" onclick="pauseMonitoring('{{ check_id }}')">⏸️ Pozastavit</button>
-                                <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">⏹️ Zastavit</button>
+                                <button class="btn btn-danger" onclick="confirmDelete('{{ check_id }}')">🗑️ Smazat</button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -302,7 +303,7 @@
                     <td>
                         <button class="btn btn-primary" onclick="window.location.href='/check/${cid}'">⚙️ Nastavení</button>
                         ${actionBtn}
-                        <button class="btn btn-danger" onclick="stopMonitoring('${cid}')">⏹️ Zastavit</button>
+                        <button class="btn btn-danger" onclick="confirmDelete('${cid}')">🗑️ Smazat</button>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -342,7 +343,7 @@
                 <td>
                     <button class="btn btn-primary" onclick="window.location.href='/check/${data.check_id}'">⚙️ Nastavení</button>
                     <button class="btn btn-primary" onclick="pauseMonitoring('${data.check_id}')">⏸️ Pozastavit</button>
-                    <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">⏹️ Zastavit</button>
+                    <button class="btn btn-danger" onclick="confirmDelete('${data.check_id}')">🗑️ Smazat</button>
                 </td>
             `;
             tbody.appendChild(newRow);
@@ -497,6 +498,13 @@
             socket.emit('stop_monitoring', {
                 check_id: checkId
             });
+        }
+
+        function confirmDelete(checkId) {
+            const val = prompt('Pro smazání napište "delete"');
+            if (val === 'delete') {
+                stopMonitoring(checkId);
+            }
         }
 
         // Automaticky načíst historii při načtení stránky

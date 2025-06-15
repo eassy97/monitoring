@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_socketio import SocketIO, emit
 import requests
 import time
@@ -21,6 +21,7 @@ PINGS_FILE = "pings.txt"
 STATUS_LOG = "monitoring_status.log"
 ACTIVE_CHECKS_FILE = "active_checks.json"
 EMAIL_SETTINGS_FILE = "email_settings.json"
+POPUP_SETTINGS_FILE = "popup_settings.json"
 
 # Globální data structures
 # {check_id: {
@@ -30,6 +31,7 @@ EMAIL_SETTINGS_FILE = "email_settings.json"
 # }}
 active_checks = {}
 email_settings = {}
+popup_settings = {}
 
 # Inicializace souborů
 for file in [USERS_FILE, PINGS_FILE, STATUS_LOG]:
@@ -52,6 +54,26 @@ def load_email_settings():
 def save_email_settings():
     with open(EMAIL_SETTINGS_FILE, "w") as f:
         json.dump(email_settings, f)
+
+# Inicializace nastavení popupů
+if not os.path.exists(POPUP_SETTINGS_FILE):
+    with open(POPUP_SETTINGS_FILE, "w") as f:
+        json.dump({
+            "info": {"width": 300, "height": 60, "color": "#d1ecf1", "text": "{message}"},
+            "delete": {"width": 300, "height": 60, "color": "#f8d7da", "text": "{message}"}
+        }, f)
+
+def load_popup_settings():
+    global popup_settings
+    try:
+        with open(POPUP_SETTINGS_FILE, "r") as f:
+            popup_settings = json.load(f)
+    except Exception:
+        popup_settings = {}
+
+def save_popup_settings():
+    with open(POPUP_SETTINGS_FILE, "w") as f:
+        json.dump(popup_settings, f)
 
 # Inicializace JSON souboru
 if not os.path.exists(ACTIVE_CHECKS_FILE):
@@ -391,10 +413,11 @@ def index():
     user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
     history = load_user_history(session['username'])
     
-    return render_template('index.html', 
+    return render_template('index.html',
                          username=session['username'],
                          active_checks=user_checks,
-                         history=history)
+                         history=history,
+                         popup=popup_settings)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -480,8 +503,26 @@ def check_settings(check_id):
         stats=stats,
         chart_labels=json.dumps(chart_labels),
         chart_times=json.dumps(chart_times),
-        paused_until=paused_until
+        paused_until=paused_until,
+        popup=popup_settings,
+        username=session.get('username')
     )
+
+@app.route('/check/<check_id>/history_json')
+def check_history_json(check_id):
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    sort = request.args.get('sort', 'desc')
+    history_all = load_check_history(check_id)
+    if sort == 'asc':
+        history_all = list(reversed(history_all))
+    total = len(history_all)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    history = history_all[start_idx:end_idx]
+    return jsonify({'history': history, 'page': page, 'pages': pages})
 
 @app.route('/advanced_settings', methods=['GET', 'POST'])
 def advanced_settings():
@@ -496,6 +537,19 @@ def advanced_settings():
         smtp['password'] = request.form.get('smtp_pass', '')
         email_settings['smtp'] = smtp
         save_email_settings()
+        popup_settings['info'] = {
+            'width': int(request.form.get('info_width', 300)),
+            'height': int(request.form.get('info_height', 60)),
+            'color': request.form.get('info_color', '#d1ecf1'),
+            'text': request.form.get('info_text', '{message}')
+        }
+        popup_settings['delete'] = {
+            'width': int(request.form.get('del_width', 300)),
+            'height': int(request.form.get('del_height', 60)),
+            'color': request.form.get('del_color', '#f8d7da'),
+            'text': request.form.get('del_text', '{message}')
+        }
+        save_popup_settings()
         flash('Nastavení uloženo', 'info')
         return redirect(url_for('advanced_settings'))
     settings = email_settings if email_settings else {
@@ -504,7 +558,7 @@ def advanced_settings():
         'body': '',
         'smtp': { 'server': 'localhost', 'port': 25, 'username': '', 'password': '' }
     }
-    return render_template('advanced_settings.html', settings=settings)
+    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'))
 
 # SocketIO handlers
 @socketio.on('start_monitoring')
@@ -571,5 +625,6 @@ if __name__ == '__main__':
     # Načti aktivní checky při startu
     load_active_checks()
     load_email_settings()
+    load_popup_settings()
     threading.Thread(target=resume_worker, daemon=True).start()
     socketio.run(app, host='127.0.0.1', port=5050, debug=True)

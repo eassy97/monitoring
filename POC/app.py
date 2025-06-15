@@ -385,8 +385,17 @@ def handle_get_history():
 @socketio.on('get_active_checks')
 def handle_get_active_checks():
     if 'username' in session:
-        user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
-        emit('active_checks_update', user_checks)
+        user = session['username']
+        sanitized = {}
+        for cid, data in active_checks.items():
+            if data['user'] != user:
+                continue
+            sanitized[cid] = {
+                'url': data['url'],
+                'interval': data['interval'],
+                'status': data.get('status', 'active'),
+            }
+        emit('active_checks_update', sanitized)
 
 if __name__ == '__main__':
     # Načti aktivní checky při startu

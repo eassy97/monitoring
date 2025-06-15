@@ -54,3 +54,4 @@
 [2025-06-15 15:08:12] admin zastavil monitoring http://127.0.0.1:5050/ (interval: 1s)
 [2025-06-15 15:08:22] admin spustil monitoring http://127.0.0.1:5050/ (interval: 5s)
 [2025-06-15 15:08:55] admin zastavil monitoring http://127.0.0.1:5050/ (interval: 5s)
+[2025-06-15 15:13:29] admin spustil monitoring http://127.0.0.1:5050/ (interval: 1s)

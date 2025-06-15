@@ -413,13 +413,11 @@ def index():
     user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
     history = load_user_history(session['username'])
     
-    back_url = request.referrer or url_for('index')
     return render_template('index.html',
                          username=session['username'],
                          active_checks=user_checks,
                          history=history,
-                         popup=popup_settings,
-                         back_url=back_url)
+                         popup=popup_settings)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -554,6 +552,7 @@ def advanced_settings():
             'text': request.form.get('del_text', '{message}')
         }
         save_popup_settings()
+        load_popup_settings()
         flash('Nastavení uloženo', 'info')
         return redirect(url_for('advanced_settings'))
     settings = email_settings if email_settings else {
@@ -562,8 +561,8 @@ def advanced_settings():
         'body': '',
         'smtp': { 'server': 'localhost', 'port': 25, 'username': '', 'password': '' }
     }
-    back_url = request.referrer or url_for('index')
-    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'), back_url=back_url)
+    load_popup_settings()
+    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'))
 
 # SocketIO handlers
 @socketio.on('start_monitoring')

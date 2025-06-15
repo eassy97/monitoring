@@ -21,29 +21,24 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .container { 
-            display: flex; 
-            gap: 30px; 
+        .container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            align-items: flex-start;
         }
-        .main { 
-            flex: 2; 
-        }
-        .history { 
-            flex: 1; 
+        .panel {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .history {
             max-height: 600px;
             overflow-y: auto;
         }
         .controls {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-            width: 33%;
+            margin-bottom: 0;
         }
         .active-checks {
             background: white;
@@ -157,10 +152,23 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <div class="header">
+        <div>
+            <a href="{{ back_url }}" style="margin-right:15px;color:#007bff;text-decoration:none;">&larr; Zpět</a>
+        </div>
         <h1>🛠️ Monitorování URL</h1>
         <div>
             {% if username %}
@@ -182,14 +190,12 @@
     {% endwith %}
 
     <div class="container">
-        <div class="main">
-            <!-- Formulář pro nový monitoring -->
-            <div class="controls">
-                <h2>🚀 Nový monitoring</h2>
-                <form id="monitorForm">
-                    <div class="form-group">
-                        <label for="nameInput">Název checku:</label>
-                        <input type="text" id="nameInput" placeholder="Moje služba">
+        <div class="controls panel">
+            <h2>🚀 Nový monitoring</h2>
+            <form id="monitorForm">
+                <div class="form-group">
+                    <label for="nameInput">Název checku:</label>
+                    <input type="text" id="nameInput" placeholder="Moje služba">
                     </div>
                     <div class="form-group">
                         <label for="urlInput">URL adresa:</label>
@@ -209,9 +215,8 @@
                 </form>
             </div>
 
-            <!-- Tabulka aktivních checků -->
-            <div class="active-checks">
-                <h2>📊 Aktivní checky</h2>
+        <div class="active-checks panel">
+            <h2>📊 Aktivní checky</h2>
                 <table class="active-checks-table" id="activeChecksTable">
                     <thead>
                         <tr>
@@ -243,18 +248,9 @@
                         {% endif %}
                     </tbody>
                 </table>
-            </div>
-
-            <!-- Live výsledky -->
-            <div class="active-checks" style="margin-top: 20px;">
-                <h2>📡 Live výsledky</h2>
-                <div id="liveResults">
-                    <div class="empty-state">Výsledky se zobrazí po spuštění monitoringu</div>
-                </div>
-            </div>
         </div>
 
-        <div class="history">
+        <div class="history panel">
             <h2>📜 Historie pingů</h2>
             <div id="historyContainer">
                 {% if history %}
@@ -276,7 +272,15 @@
         </div>
     </div>
 
+    <div class="active-checks panel" style="margin-top: 20px;">
+        <h2>📡 Live výsledky</h2>
+        <div id="liveResults">
+            <div class="empty-state">Výsledky se zobrazí po spuštění monitoringu</div>
+        </div>
+    </div>
+
     <script>
+        const popupConfig = {{ popup | tojson }};
         const socket = io();
         let isMonitoring = false;
 
@@ -500,11 +504,29 @@
             });
         }
 
+        function showPopup(msg, type='info') {
+            const cfg = popupConfig[type] || popupConfig.info;
+            const div = document.createElement('div');
+            div.className = 'popup';
+            div.style.background = cfg.color;
+            div.style.width = cfg.width + 'px';
+            div.style.height = cfg.height + 'px';
+            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>` + cfg.text.replace('{message}', msg);
+            document.body.appendChild(div);
+            setTimeout(()=>div.remove(), 3000);
+        }
         function confirmDelete(checkId) {
-            const val = prompt('Pro smazání napište "delete"');
-            if (val === 'delete') {
-                stopMonitoring(checkId);
-            }
+            const cfg = popupConfig.delete;
+            const div = document.createElement('div');
+            div.className = 'popup';
+            div.style.background = cfg.color;
+            div.style.width = cfg.width + 'px';
+            div.style.height = cfg.height + 'px';
+            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>` +
+                cfg.text.replace('{message}', 'Napište delete pro potvrzení') +
+                `<br><input type="text" id="delInput" style="width:90%;margin-top:10px;"><br>` +
+                `<button class="btn" style="margin-top:5px;" onclick="if(document.getElementById('delInput').value.toLowerCase()=='delete'){ stopMonitoring('${checkId}'); this.parentElement.remove(); }">OK</button>`;
+            document.body.appendChild(div);
         }
 
         // Automaticky načíst historii při načtení stránky

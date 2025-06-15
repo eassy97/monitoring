@@ -413,11 +413,13 @@ def index():
     user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
     history = load_user_history(session['username'])
     
+    back_url = request.referrer or url_for('index')
     return render_template('index.html',
                          username=session['username'],
                          active_checks=user_checks,
                          history=history,
-                         popup=popup_settings)
+                         popup=popup_settings,
+                         back_url=back_url)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -491,6 +493,7 @@ def check_settings(check_id):
     if check.get('paused_until'):
         paused_until = datetime.fromtimestamp(check['paused_until']).strftime('%H:%M:%S')
 
+    back_url = request.referrer or url_for('index')
     return render_template(
         'check_settings.html',
         check_id=check_id,
@@ -505,7 +508,8 @@ def check_settings(check_id):
         chart_times=json.dumps(chart_times),
         paused_until=paused_until,
         popup=popup_settings,
-        username=session.get('username')
+        username=session.get('username'),
+        back_url=back_url
     )
 
 @app.route('/check/<check_id>/history_json')
@@ -558,7 +562,8 @@ def advanced_settings():
         'body': '',
         'smtp': { 'server': 'localhost', 'port': 25, 'username': '', 'password': '' }
     }
-    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'))
+    back_url = request.referrer or url_for('index')
+    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'), back_url=back_url)
 
 # SocketIO handlers
 @socketio.on('start_monitoring')

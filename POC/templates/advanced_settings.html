@@ -16,6 +16,7 @@
 </head>
 <body>
     <div class="header">
+        <a href="{{ back_url }}" style="margin-right:15px;color:#007bff;text-decoration:none;">&larr; Zpět</a>
         <h1>🛠️ Monitorování URL</h1>
         <div>
             {% if username %}
@@ -64,43 +65,50 @@
         </div>
         <div class="panel">
             <h3>Nastavení popupů</h3>
-            <div class="form-group">
-                <label>Info šířka</label>
-                <input type="number" name="info_width" value="{{ popup.info.width }}">
-            </div>
-            <div class="form-group">
-                <label>Info výška</label>
-                <input type="number" name="info_height" value="{{ popup.info.height }}">
-            </div>
-            <div class="form-group">
-                <label>Info barva</label>
-                <input type="text" name="info_color" value="{{ popup.info.color }}">
-            </div>
-            <div class="form-group">
-                <label>Info text</label>
-                <input type="text" name="info_text" value="{{ popup.info.text }}">
-            </div>
-            <div class="form-group">
-                <label>Delete šířka</label>
-                <input type="number" name="del_width" value="{{ popup.delete.width }}">
-            </div>
-            <div class="form-group">
-                <label>Delete výška</label>
-                <input type="number" name="del_height" value="{{ popup.delete.height }}">
-            </div>
-            <div class="form-group">
-                <label>Delete barva</label>
-                <input type="text" name="del_color" value="{{ popup.delete.color }}">
-            </div>
-            <div class="form-group">
-                <label>Delete text</label>
-                <input type="text" name="del_text" value="{{ popup.delete.text }}">
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+                <div>
+                    <h4>Info popup</h4>
+                    <div class="form-group">
+                        <label>Šířka</label>
+                        <input type="number" name="info_width" value="{{ popup.info.width }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Výška</label>
+                        <input type="number" name="info_height" value="{{ popup.info.height }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Barva</label>
+                        <input type="text" name="info_color" value="{{ popup.info.color }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Text</label>
+                        <textarea name="info_text" rows="3">{{ popup.info.text }}</textarea>
+                    </div>
+                </div>
+                <div>
+                    <h4>Delete popup</h4>
+                    <div class="form-group">
+                        <label>Šířka</label>
+                        <input type="number" name="del_width" value="{{ popup.delete.width }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Výška</label>
+                        <input type="number" name="del_height" value="{{ popup.delete.height }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Barva</label>
+                        <input type="text" name="del_color" value="{{ popup.delete.color }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Text</label>
+                        <textarea name="del_text" rows="3">{{ popup.delete.text }}</textarea>
+                    </div>
+                </div>
             </div>
         </div>
         <div style="grid-column:1/span 2;text-align:center;">
             <button type="submit" class="btn">Uložit</button>
         </div>
     </form>
-    <p><a href="{{ url_for('index') }}">&larr; Zpět</a></p>
 </body>
 </html>

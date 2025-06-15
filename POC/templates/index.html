@@ -21,28 +21,24 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .container { 
-            display: flex; 
-            gap: 30px; 
+        .container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            align-items: flex-start;
         }
-        .main { 
-            flex: 2; 
-        }
-        .history { 
-            flex: 1; 
+        .panel {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .history {
             max-height: 600px;
             overflow-y: auto;
         }
         .controls {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
+            margin-bottom: 0;
         }
         .active-checks {
             background: white;
@@ -156,14 +152,28 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <div class="header">
+        <div>
+            <a href="{{ url_for('index') }}" style="margin-right:15px;color:#007bff;text-decoration:none;">🏠 Domů</a>
+        </div>
         <h1>🛠️ Monitorování URL</h1>
         <div>
             {% if username %}
                 <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('advanced_settings') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">⚙️ Pokročilé nastavení</a>
                 <a href="{{ url_for('logout') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">🚪 Odhlásit se</a>
             {% endif %}
         </div>
@@ -180,11 +190,13 @@
     {% endwith %}
 
     <div class="container">
-        <div class="main">
-            <!-- Formulář pro nový monitoring -->
-            <div class="controls">
-                <h2>🚀 Nový monitoring</h2>
-                <form id="monitorForm">
+        <div class="controls panel">
+            <h2>🚀 Nový monitoring</h2>
+            <form id="monitorForm">
+                <div class="form-group">
+                    <label for="nameInput">Název checku:</label>
+                    <input type="text" id="nameInput" placeholder="Moje služba">
+                    </div>
                     <div class="form-group">
                         <label for="urlInput">URL adresa:</label>
                         <input type="url" id="urlInput" placeholder="https://example.com" required>
@@ -203,12 +215,12 @@
                 </form>
             </div>
 
-            <!-- Tabulka aktivních checků -->
-            <div class="active-checks">
-                <h2>📊 Aktivní checky</h2>
+        <div class="active-checks panel">
+            <h2>📊 Aktivní checky</h2>
                 <table class="active-checks-table" id="activeChecksTable">
                     <thead>
                         <tr>
+                            <th>Název</th>
                             <th>URL</th>
                             <th>Interval</th>
                             <th>Poslední výsledek</th>
@@ -218,35 +230,27 @@
                     <tbody id="activeChecksBody">
                         {% for check_id, data in active_checks.items() %}
                         <tr id="row-{{ check_id }}">
+                            <td>{{ data.name }}</td>
                             <td>{{ data.url }}</td>
                             <td>{{ data.interval }}s</td>
                             <td id="status-{{ check_id }}">🟢 Aktivní</td>
                             <td>
                                 <button class="btn btn-primary" onclick="window.location.href='{{ url_for('check_settings', check_id=check_id) }}'">⚙️ Nastavení</button>
                                 <button class="btn btn-primary" onclick="pauseMonitoring('{{ check_id }}')">⏸️ Pozastavit</button>
-                                <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">⏹️ Zastavit</button>
+                                <button class="btn btn-danger" onclick="confirmDelete('{{ check_id }}')">🗑️ Smazat</button>
                             </td>
                         </tr>
                         {% endfor %}
                         {% if not active_checks %}
                         <tr id="emptyRow">
-                            <td colspan="4" class="empty-state">Žádné aktivní checky</td>
+                            <td colspan="5" class="empty-state">Žádné aktivní checky</td>
                         </tr>
                         {% endif %}
                     </tbody>
                 </table>
-            </div>
-
-            <!-- Live výsledky -->
-            <div class="active-checks" style="margin-top: 20px;">
-                <h2>📡 Live výsledky</h2>
-                <div id="liveResults">
-                    <div class="empty-state">Výsledky se zobrazí po spuštění monitoringu</div>
-                </div>
-            </div>
         </div>
 
-        <div class="history">
+        <div class="history panel">
             <h2>📜 Historie pingů</h2>
             <div id="historyContainer">
                 {% if history %}
@@ -268,7 +272,15 @@
         </div>
     </div>
 
+    <div class="active-checks panel" style="margin-top: 20px;">
+        <h2>📡 Live výsledky</h2>
+        <div id="liveResults">
+            <div class="empty-state">Výsledky se zobrazí po spuštění monitoringu</div>
+        </div>
+    </div>
+
     <script>
+        const popupConfig = {{ popup | tojson }};
         const socket = io();
         let isMonitoring = false;
 
@@ -277,21 +289,25 @@
             tbody.innerHTML = '';
             const entries = Object.entries(checks);
             if (entries.length === 0) {
-                tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+                tbody.innerHTML = '<tr id="emptyRow"><td colspan="5" class="empty-state">Žádné aktivní checky</td></tr>';
                 return;
             }
             for (const [cid, data] of entries) {
                 const row = document.createElement('tr');
                 row.id = `row-${cid}`;
                 const status = data.status === 'paused' ? '⏸️ Pozastaveno' : '🟢 Aktivní';
+                const actionBtn = data.status === 'paused'
+                    ? `<button class="btn btn-primary" onclick="resumeMonitoring('${cid}')">▶️ Spustit</button>`
+                    : `<button class="btn btn-primary" onclick="pauseMonitoring('${cid}')">⏸️ Pozastavit</button>`;
                 row.innerHTML = `
+                    <td>${data.name || ''}</td>
                     <td>${data.url}</td>
                     <td>${data.interval}s</td>
                     <td id="status-${cid}">${status}</td>
                     <td>
                         <button class="btn btn-primary" onclick="window.location.href='/check/${cid}'">⚙️ Nastavení</button>
-                        <button class="btn btn-primary" onclick="pauseMonitoring('${cid}')">⏸️ Pozastavit</button>
-                        <button class="btn btn-danger" onclick="stopMonitoring('${cid}')">⏹️ Zastavit</button>
+                        ${actionBtn}
+                        <button class="btn btn-danger" onclick="confirmDelete('${cid}')">🗑️ Smazat</button>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -324,18 +340,20 @@
             const newRow = document.createElement('tr');
             newRow.id = `row-${data.check_id}`;
             newRow.innerHTML = `
+                <td>${data.name || ''}</td>
                 <td>${data.url}</td>
                 <td>${data.interval}s</td>
                 <td id="status-${data.check_id}">🟢 Aktivní</td>
                 <td>
                     <button class="btn btn-primary" onclick="window.location.href='/check/${data.check_id}'">⚙️ Nastavení</button>
                     <button class="btn btn-primary" onclick="pauseMonitoring('${data.check_id}')">⏸️ Pozastavit</button>
-                    <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">⏹️ Zastavit</button>
+                    <button class="btn btn-danger" onclick="confirmDelete('${data.check_id}')">🗑️ Smazat</button>
                 </td>
             `;
             tbody.appendChild(newRow);
-            
+
             // Vyčistit formulář
+            document.getElementById('nameInput').value = '';
             document.getElementById('urlInput').value = '';
         });
 
@@ -350,7 +368,7 @@
             // Přidat prázdný řádek pokud už nejsou žádné checky
             const tbody = document.getElementById('activeChecksBody');
             if (tbody.children.length === 0) {
-                tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+                tbody.innerHTML = '<tr id="emptyRow"><td colspan="5" class="empty-state">Žádné aktivní checky</td></tr>';
             }
         });
 
@@ -359,6 +377,29 @@
             const statusCell = document.getElementById(`status-${data.check_id}`);
             if (statusCell) {
                 statusCell.innerHTML = '⏸️ Pozastaveno';
+            }
+            const row = document.getElementById(`row-${data.check_id}`);
+            if (row) {
+                const btn = row.querySelector('button[onclick^="pauseMonitoring"]');
+                if (btn) {
+                    btn.textContent = '▶️ Spustit';
+                    btn.setAttribute('onclick', `resumeMonitoring('${data.check_id}')`);
+                }
+            }
+        });
+
+        socket.on('check_resumed', function(data) {
+            const statusCell = document.getElementById(`status-${data.check_id}`);
+            if (statusCell) {
+                statusCell.innerHTML = '🟢 Aktivní';
+            }
+            const row = document.getElementById(`row-${data.check_id}`);
+            if (row) {
+                const btn = row.querySelector('button[onclick^="resumeMonitoring"]');
+                if (btn) {
+                    btn.textContent = '⏸️ Pozastavit';
+                    btn.setAttribute('onclick', `pauseMonitoring('${data.check_id}')`);
+                }
             }
         });
 
@@ -428,6 +469,7 @@
         function startMonitoring() {
             const url = document.getElementById('urlInput').value;
             const interval = document.getElementById('intervalSelect').value;
+            const name = document.getElementById('nameInput').value;
             
             if (!url) {
                 alert('Zadejte platnou URL adresu!');
@@ -436,7 +478,8 @@
             
             socket.emit('start_monitoring', {
                 url: url,
-                interval: interval
+                interval: interval,
+                name: name
             });
         }
 
@@ -448,11 +491,42 @@
             });
         }
 
+        function resumeMonitoring(checkId) {
+            socket.emit('resume_monitoring', {
+                check_id: checkId
+            });
+        }
+
         // Funkce pro zastavení monitoringu
         function stopMonitoring(checkId) {
             socket.emit('stop_monitoring', {
                 check_id: checkId
             });
+        }
+
+        function showPopup(msg, type='info') {
+            const cfg = popupConfig[type] || popupConfig.info;
+            const div = document.createElement('div');
+            div.className = 'popup';
+            div.style.background = cfg.color;
+            div.style.width = cfg.width + 'px';
+            div.style.height = cfg.height + 'px';
+            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>` + cfg.text.replace('{message}', msg);
+            document.body.appendChild(div);
+            setTimeout(()=>div.remove(), 3000);
+        }
+        function confirmDelete(checkId) {
+            const cfg = popupConfig.delete;
+            const div = document.createElement('div');
+            div.className = 'popup';
+            div.style.background = cfg.color;
+            div.style.width = cfg.width + 'px';
+            div.style.height = cfg.height + 'px';
+            div.innerHTML = `<span class="close" onclick="this.parentElement.remove()">&times;</span>` +
+                cfg.text.replace('{message}', 'Napište delete pro potvrzení') +
+                `<br><input type="text" id="delInput" style="width:90%;margin-top:10px;"><br>` +
+                `<button class="btn" style="margin-top:5px;" onclick="if(document.getElementById('delInput').value.toLowerCase()=='delete'){ stopMonitoring('${checkId}'); this.parentElement.remove(); }">OK</button>`;
+            document.body.appendChild(div);
         }
 
         // Automaticky načíst historii při načtení stránky

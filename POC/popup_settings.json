@@ -1,0 +1,4 @@
+{
+    "info": {"width": 300, "height": 60, "color": "#d1ecf1", "text": "{message}"},
+    "delete": {"width": 300, "height": 60, "color": "#f8d7da", "text": "{message}"}
+  }

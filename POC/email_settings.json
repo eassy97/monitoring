@@ -1,0 +1,1 @@
+{"subject": "Alert: {name}", "body": "Check {name} na {url} selhal", "smtp": {"server": "localhost", "port": 25, "username": "admin", "password": "admin"}, "recipients": "jan.tolar@innogy.cz;"}

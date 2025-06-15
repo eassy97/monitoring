@@ -4,39 +4,89 @@
     <meta charset="UTF-8">
     <title>Nastavení checku</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            background: #007bff;
+            color: white;
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
         th, td { padding: 8px; border-bottom: 1px solid #ddd; }
         th { background: #f8f9fa; }
-        .form-group { margin-bottom: 10px; }
-        input { padding: 5px; width: 100%; }
-        .btn { padding: 8px 15px; border: none; background: #007bff; color: white; cursor: pointer; margin-top: 10px; }
         a { text-decoration: none; color: #007bff; }
     </style>
 </head>
 <body>
-    <h2>Nastavení checku</h2>
-    <p><strong>URL:</strong> {{ check.url }}</p>
-    <form method="POST">
-        <div class="form-group">
-            <label>Interval (s):</label>
-            <input type="number" name="interval" value="{{ check.interval }}" min="1">
-        </div>
-        <div class="form-group">
-            <label>Počet chyb pro notifikaci:</label>
-            <input type="number" name="threshold" value="{{ check.error_threshold }}" min="1">
-        </div>
-        <div class="form-group">
-            <label>E-mail pro notifikace:</label>
-            <input type="email" name="email" value="{{ check.notify_email }}">
-        </div>
-        <button type="submit" class="btn">Uložit</button>
-    </form>
-    <h3>Historie běhů</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Čas</th>
+    <div class="panel">
+        <h2>Nastavení checku</h2>
+        <p><strong>URL:</strong> {{ check.url }}</p>
+        <form method="POST">
+            <div class="form-group">
+                <label>Interval (s):</label>
+                <input type="number" name="interval" value="{{ check.interval }}" min="1">
+            </div>
+            <div class="form-group">
+                <label>Počet chyb pro notifikaci:</label>
+                <input type="number" name="threshold" value="{{ check.error_threshold }}" min="1">
+            </div>
+            <div class="form-group">
+                <label>E-mail pro notifikace:</label>
+                <input type="email" name="email" value="{{ check.notify_email }}">
+            </div>
+            <div class="form-group">
+                <label>Pozastavit na:</label>
+                <select name="pause_minutes">
+                    <option value="1">1 minuta</option>
+                    <option value="5">5 minut</option>
+                </select>
+            </div>
+            <button type="submit" class="btn" name="action" value="save">Uložit</button>
+            <button type="submit" class="btn" name="action" value="pause">Pozastavit</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h3>Historie běhů</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Čas</th>
                 <th>Stav</th>
                 <th>Odezva</th>
                 <th>Zpráva</th>
@@ -55,7 +105,8 @@
             <tr><td colspan="4">Žádné záznamy</td></tr>
             {% endif %}
         </tbody>
-    </table>
+        </table>
+    </div>
     <p><a href="{{ url_for('index') }}">&larr; Zpět</a></p>
 </body>
 </html>

@@ -7,6 +7,7 @@ import os
 import uuid
 import json
 from datetime import datetime
+from datetime import timedelta
 import smtplib
 from email.message import EmailMessage
 
@@ -127,6 +128,51 @@ def load_check_history(check_id: str):
                         "message": msg
                     })
     return sorted(history, key=lambda x: x["timestamp"], reverse=True)
+
+def compute_check_stats(check: dict, history: list):
+    """Vypočte statistiky pro stránku detailu"""
+    run_count = len(history)
+    error_count = sum(1 for h in history if h["status"] != "success")
+    times = [float(h["response_time"]) for h in history if h["status"] == "success"]
+    fastest = min(times) if times else 0
+    slowest = max(times) if times else 0
+    avg_time = round(sum(times) / len(times), 2) if times else 0
+
+    last_time = history[0]["timestamp"] if history else "N/A"
+    last_status = "Available" if history and history[0]["status"] == "success" else "Not Available"
+
+    now = datetime.now()
+
+    def _filter(period_days):
+        since = now - timedelta(days=period_days)
+        return [h for h in history if datetime.strptime(h["timestamp"], "%Y-%m-%d %H:%M:%S") >= since]
+
+    def _avg_response(hist):
+        resp = [float(h["response_time"]) for h in hist if h["status"] == "success"]
+        return round(sum(resp) / len(resp), 2) if resp else 0
+
+    def _uptime(hist):
+        return round(100 * sum(1 for h in hist if h["status"] == "success") / len(hist), 2) if hist else 0
+
+    day_hist = _filter(1)
+    week_hist = _filter(7)
+    month_hist = _filter(30)
+
+    return {
+        "run_count": run_count,
+        "error_count": error_count,
+        "fastest": fastest,
+        "slowest": slowest,
+        "avg_time": avg_time,
+        "last_time": last_time,
+        "last_status": last_status,
+        "response_day": _avg_response(day_hist),
+        "response_week": _avg_response(week_hist),
+        "response_month": _avg_response(month_hist),
+        "uptime_day": _uptime(day_hist),
+        "uptime_week": _uptime(week_hist),
+        "uptime_month": _uptime(month_hist),
+    }
 
 def check_user(username: str, password: str) -> bool:
     """Ověří přihlašovací údaje"""
@@ -342,7 +388,18 @@ def check_settings(check_id):
             return redirect(url_for('check_settings', check_id=check_id))
 
     history = load_check_history(check_id)
-    return render_template('check_settings.html', check_id=check_id, check=check, history=history)
+    stats = compute_check_stats(check, history)
+    chart_labels = [h['timestamp'].split(' ')[1] for h in history[-20:]][::-1]
+    chart_times = [float(h['response_time']) for h in history[-20:]][::-1]
+    return render_template(
+        'check_settings.html',
+        check_id=check_id,
+        check=check,
+        history=history,
+        stats=stats,
+        chart_labels=json.dumps(chart_labels),
+        chart_times=json.dumps(chart_times)
+    )
 
 # SocketIO handlers
 @socketio.on('start_monitoring')

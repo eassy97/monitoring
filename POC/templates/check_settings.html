@@ -10,12 +10,21 @@
             padding: 20px;
             background: #f5f5f5;
         }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
         .panel {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
         }
         .form-group {
             margin-bottom: 15px;
@@ -51,62 +60,123 @@
         th, td { padding: 8px; border-bottom: 1px solid #ddd; }
         th { background: #f8f9fa; }
         a { text-decoration: none; color: #007bff; }
+        .status-large { font-size: 24px; font-weight: bold; margin-top: 10px; }
+        .chart-stats { display: flex; gap: 20px; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="panel">
-        <h2>Nastavení checku</h2>
-        <p><strong>URL:</strong> {{ check.url }}</p>
-        <form method="POST">
-            <div class="form-group">
-                <label>Interval (s):</label>
-                <input type="number" name="interval" value="{{ check.interval }}" min="1">
+    <div class="grid-container">
+        <div class="panel" style="grid-column: 1; grid-row: 1;">
+            <h2>Nastavení checku</h2>
+            <p><strong>URL:</strong> {{ check.url }}</p>
+            <form method="POST">
+                <div class="form-group">
+                    <label>Interval (s):</label>
+                    <input type="number" name="interval" value="{{ check.interval }}" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Počet chyb pro notifikaci:</label>
+                    <input type="number" name="threshold" value="{{ check.error_threshold }}" min="1">
+                </div>
+                <div class="form-group">
+                    <label>E-mail pro notifikace:</label>
+                    <input type="email" name="email" value="{{ check.notify_email }}">
+                </div>
+                <div class="form-group">
+                    <label>Pozastavit na:</label>
+                    <select name="pause_minutes">
+                        <option value="1">1 minuta</option>
+                        <option value="5">5 minut</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn" name="action" value="save">Uložit</button>
+                <button type="submit" class="btn" name="action" value="pause">Pozastavit</button>
+            </form>
+        </div>
+        <div class="info-grid" style="grid-column: 2 / span 2; grid-row: 1;">
+            <div class="panel">
+                <h3>Obecné</h3>
+                <p><strong>Název:</strong> {{ check_id }}</p>
+                <p><strong>URL:</strong> {{ check.url }}</p>
+                <p><strong>Frekvence:</strong> {{ check.interval }}s</p>
+                <p><strong>Poslední čas:</strong> {{ stats.last_time }}</p>
+                <div class="status-large">{{ stats.last_status }}</div>
             </div>
-            <div class="form-group">
-                <label>Počet chyb pro notifikaci:</label>
-                <input type="number" name="threshold" value="{{ check.error_threshold }}" min="1">
+            <div class="panel">
+                <h3>Odezvy</h3>
+                <p>Denní průměr: {{ stats.response_day }}ms</p>
+                <p>Týdenní průměr: {{ stats.response_week }}ms</p>
+                <p>Měsíční průměr: {{ stats.response_month }}ms</p>
             </div>
-            <div class="form-group">
-                <label>E-mail pro notifikace:</label>
-                <input type="email" name="email" value="{{ check.notify_email }}">
+            <div class="panel">
+                <h3>Uptime</h3>
+                <p>Denní: {{ stats.uptime_day }}%</p>
+                <p>Týdenní: {{ stats.uptime_week }}%</p>
+                <p>Měsíční: {{ stats.uptime_month }}%</p>
             </div>
-            <div class="form-group">
-                <label>Pozastavit na:</label>
-                <select name="pause_minutes">
-                    <option value="1">1 minuta</option>
-                    <option value="5">5 minut</option>
-                </select>
+        </div>
+        <div class="panel" style="grid-column: 1 / span 3; grid-row: 2;">
+            <h3>Performance History</h3>
+            <canvas id="perfChart" height="100"></canvas>
+            <div class="chart-stats">
+                <div>Run Count: {{ stats.run_count }}</div>
+                <div>Errors: {{ stats.error_count }}</div>
+                <div>Slowest: {{ stats.slowest }}ms</div>
+                <div>Average: {{ stats.avg_time }}ms</div>
+                <div>Fastest: {{ stats.fastest }}ms</div>
             </div>
-            <button type="submit" class="btn" name="action" value="save">Uložit</button>
-            <button type="submit" class="btn" name="action" value="pause">Pozastavit</button>
-        </form>
-    </div>
-    <div class="panel">
-        <h3>Historie běhů</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Čas</th>
-                <th>Stav</th>
-                <th>Odezva</th>
-                <th>Zpráva</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in history %}
-            <tr>
-                <td>{{ item.timestamp }}</td>
-                <td>{{ item.status }}</td>
-                <td>{{ item.response_time }}ms</td>
-                <td>{{ item.message }}</td>
-            </tr>
-            {% endfor %}
-            {% if not history %}
-            <tr><td colspan="4">Žádné záznamy</td></tr>
-            {% endif %}
-        </tbody>
-        </table>
+        </div>
+        <div class="panel" style="grid-column: 1 / span 3; grid-row: 3;">
+            <h3>Historie běhů</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Čas</th>
+                        <th>Stav</th>
+                        <th>Odezva</th>
+                        <th>Zpráva</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in history %}
+                    <tr>
+                        <td>{{ item.timestamp }}</td>
+                        <td>{{ item.status }}</td>
+                        <td>{{ item.response_time }}ms</td>
+                        <td>{{ item.message }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not history %}
+                    <tr><td colspan="4">Žádné záznamy</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <p><a href="{{ url_for('index') }}">&larr; Zpět</a></p>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const labels = {{ chart_labels | safe }};
+        const times = {{ chart_times | safe }};
+        const ctx = document.getElementById('perfChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Response Time (ms)',
+                    data: times,
+                    borderColor: 'rgb(75, 192, 192)',
+                    fill: false,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    </script>
 </body>
 </html>

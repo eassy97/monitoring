@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_socketio import SocketIO, emit
 import requests
 import time
@@ -7,6 +7,9 @@ import os
 import uuid
 import json
 from datetime import datetime
+from datetime import timedelta
+import smtplib
+from email.message import EmailMessage
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'tajny_klic_123'
@@ -17,14 +20,60 @@ USERS_FILE = "users.txt"
 PINGS_FILE = "pings.txt"
 STATUS_LOG = "monitoring_status.log"
 ACTIVE_CHECKS_FILE = "active_checks.json"
+EMAIL_SETTINGS_FILE = "email_settings.json"
+POPUP_SETTINGS_FILE = "popup_settings.json"
 
 # Globální data structures
-active_checks = {}  # {check_id: {url, interval, user, stop_event, thread}}
+# {check_id: {
+#     name, url, interval, user, stop_event, thread,
+#     error_threshold, notify_email, error_count,
+#     paused_until
+# }}
+active_checks = {}
+email_settings = {}
+popup_settings = {}
 
 # Inicializace souborů
 for file in [USERS_FILE, PINGS_FILE, STATUS_LOG]:
     if not os.path.exists(file):
         open(file, "w").close()
+
+# Inicializace nastavení emailu
+if not os.path.exists(EMAIL_SETTINGS_FILE):
+    with open(EMAIL_SETTINGS_FILE, "w") as f:
+        json.dump({"subject": "Alert: {name}", "body": "Check {name} na {url} selhal", "smtp": {"server": "localhost", "port": 25, "username": "", "password": ""}}, f)
+
+def load_email_settings():
+    global email_settings
+    try:
+        with open(EMAIL_SETTINGS_FILE, "r") as f:
+            email_settings = json.load(f)
+    except Exception:
+        email_settings = {}
+
+def save_email_settings():
+    with open(EMAIL_SETTINGS_FILE, "w") as f:
+        json.dump(email_settings, f)
+
+# Inicializace nastavení popupů
+if not os.path.exists(POPUP_SETTINGS_FILE):
+    with open(POPUP_SETTINGS_FILE, "w") as f:
+        json.dump({
+            "info": {"width": 300, "height": 60, "color": "#d1ecf1", "text": "{message}"},
+            "delete": {"width": 300, "height": 60, "color": "#f8d7da", "text": "{message}"}
+        }, f)
+
+def load_popup_settings():
+    global popup_settings
+    try:
+        with open(POPUP_SETTINGS_FILE, "r") as f:
+            popup_settings = json.load(f)
+    except Exception:
+        popup_settings = {}
+
+def save_popup_settings():
+    with open(POPUP_SETTINGS_FILE, "w") as f:
+        json.dump(popup_settings, f)
 
 # Inicializace JSON souboru
 if not os.path.exists(ACTIVE_CHECKS_FILE):
@@ -40,7 +89,15 @@ def load_active_checks():
             if content:
                 checks = json.loads(content)
                 for check_id, data in checks.items():
-                    start_check(data['url'], data['interval'], data['user'], check_id)
+                    start_check(
+                        data['url'],
+                        data['interval'],
+                        data['user'],
+                        check_id,
+                        data.get('error_threshold', 3),
+                        data.get('notify_email', ''),
+                        data.get('name', '')
+                    )
     except Exception as e:
         print(f"Chyba při načítání aktivních checků: {e}")
 
@@ -51,7 +108,10 @@ def save_active_checks():
         checks_to_save[check_id] = {
             "url": data["url"],
             "interval": data["interval"],
-            "user": data["user"]
+            "user": data["user"],
+            "name": data.get("name", ""),
+            "error_threshold": data.get("error_threshold", 3),
+            "notify_email": data.get("notify_email", "")
         }
     with open(ACTIVE_CHECKS_FILE, "w") as f:
         json.dump(checks_to_save, f)
@@ -62,11 +122,14 @@ def log_action(action: str, url: str, interval: int, user: str):
     with open(STATUS_LOG, "a") as f:
         f.write(f"[{timestamp}] {user} {action} {url} (interval: {interval}s)\n")
 
-def save_ping_result(user: str, url: str, status: str, response_time: float = 0, message: str = ""):
+def save_ping_result(user: str, check_id: str, url: str, status: str,
+                     response_time: float = 0, message: str = ""):
     """Uloží výsledek pingu do souboru"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PINGS_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{user}|{timestamp}|{url}|{status}|{response_time}|{message}\n")
+        f.write(
+            f"{user}|{check_id}|{timestamp}|{url}|{status}|{response_time}|{message}\n"
+        )
 
 def load_user_history(username: str):
     """Načte historii pingů pro konkrétního uživatele"""
@@ -75,15 +138,84 @@ def load_user_history(username: str):
         with open(PINGS_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 parts = line.strip().split("|")
-                if len(parts) == 6 and parts[0] == username:
+                if len(parts) == 7:
+                    user, _check_id, timestamp, url, status, resp, msg = parts
+                elif len(parts) == 6:
+                    user, timestamp, url, status, resp, msg = parts
+                else:
+                    continue
+                if user == username:
                     history.append({
-                        "timestamp": parts[1],
-                        "url": parts[2],
-                        "status": parts[3],
-                        "response_time": parts[4],
-                        "message": parts[5]
+                        "timestamp": timestamp,
+                        "url": url,
+                        "status": status,
+                        "response_time": resp,
+                        "message": msg
                     })
     return sorted(history, key=lambda x: x["timestamp"], reverse=True)[:20]
+
+def load_check_history(check_id: str):
+    """Načte historii pro konkrétní check"""
+    history = []
+    if os.path.exists(PINGS_FILE):
+        with open(PINGS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split("|")
+                if len(parts) == 7 and parts[1] == check_id:
+                    _, _cid, timestamp, url, status, resp, msg = parts
+                    history.append({
+                        "timestamp": timestamp,
+                        "url": url,
+                        "status": status,
+                        "response_time": resp,
+                        "message": msg
+                    })
+    return sorted(history, key=lambda x: x["timestamp"], reverse=True)
+
+def compute_check_stats(check: dict, history: list):
+    """Vypočte statistiky pro stránku detailu"""
+    run_count = len(history)
+    error_count = sum(1 for h in history if h["status"] != "success")
+    times = [float(h["response_time"]) for h in history if h["status"] == "success"]
+    fastest = min(times) if times else 0
+    slowest = max(times) if times else 0
+    avg_time = round(sum(times) / len(times), 2) if times else 0
+
+    last_time = history[0]["timestamp"] if history else "N/A"
+    last_status = "Available" if history and history[0]["status"] == "success" else "Not Available"
+
+    now = datetime.now()
+
+    def _filter(period_days):
+        since = now - timedelta(days=period_days)
+        return [h for h in history if datetime.strptime(h["timestamp"], "%Y-%m-%d %H:%M:%S") >= since]
+
+    def _avg_response(hist):
+        resp = [float(h["response_time"]) for h in hist if h["status"] == "success"]
+        return round(sum(resp) / len(resp), 2) if resp else 0
+
+    def _uptime(hist):
+        return round(100 * sum(1 for h in hist if h["status"] == "success") / len(hist), 2) if hist else 0
+
+    day_hist = _filter(1)
+    week_hist = _filter(7)
+    month_hist = _filter(30)
+
+    return {
+        "run_count": run_count,
+        "error_count": error_count,
+        "fastest": fastest,
+        "slowest": slowest,
+        "avg_time": avg_time,
+        "last_time": last_time,
+        "last_status": last_status,
+        "response_day": _avg_response(day_hist),
+        "response_week": _avg_response(week_hist),
+        "response_month": _avg_response(month_hist),
+        "uptime_day": _uptime(day_hist),
+        "uptime_week": _uptime(week_hist),
+        "uptime_month": _uptime(month_hist),
+    }
 
 def check_user(username: str, password: str) -> bool:
     """Ověří přihlašovací údaje"""
@@ -97,53 +229,112 @@ def check_user(username: str, password: str) -> bool:
                     return True
     return False
 
-def ping_worker(url: str, interval: int, user: str, check_id: str, stop_event: threading.Event):
+def send_notification(emails: list, url: str, name: str, message: str):
+    """Odešle notifikační e-mail"""
+    if not email_settings:
+        load_email_settings()
+    subject = email_settings.get("subject", "Alert {name}").replace("{name}", name)
+    body_template = email_settings.get("body", "Check {name} selhal na {url}")
+    body = body_template.replace("{name}", name).replace("{url}", url)
+    body += f"\n{message}"
+    smtp_cfg = email_settings.get("smtp", {})
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = smtp_cfg.get("username", "monitor@example.com")
+        msg["To"] = ",".join(emails)
+        msg.set_content(body)
+        with smtplib.SMTP(smtp_cfg.get("server", "localhost"), smtp_cfg.get("port", 25)) as smtp:
+            if smtp_cfg.get("username"):
+                smtp.login(smtp_cfg.get("username"), smtp_cfg.get("password", ""))
+            smtp.send_message(msg)
+    except Exception as e:
+        print(f"Nepodařilo se odeslat e-mail: {e}")
+
+
+def ping_worker(
+    url: str,
+    interval: int,
+    user: str,
+    check_id: str,
+    stop_event: threading.Event,
+    error_threshold: int,
+    notify_email: str,
+    name: str,
+):
     """Hlavní pracovní funkce pro pingování"""
+    error_count = 0
     while not stop_event.is_set():
         try:
             start_time = time.time()
             response = requests.get(url, timeout=5)
             response_time = round((time.time() - start_time) * 1000, 2)
-            
+
             result = {
                 "check_id": check_id,
                 "url": url,
                 "status": "success",
                 "code": response.status_code,
                 "time": response_time,
-                "timestamp": datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
             }
-            
-            save_ping_result(user, url, "success", response_time, f"Status {response.status_code}")
-            socketio.emit('ping_update', result)
-            
+
+            save_ping_result(user, check_id, url, "success", response_time, f"Status {response.status_code}")
+            if response.status_code != 200:
+                error_count += 1
+            else:
+                error_count = 0
+
+            socketio.emit("ping_update", result)
+
         except Exception as e:
             result = {
                 "check_id": check_id,
                 "url": url,
                 "status": "error",
                 "message": str(e),
-                "timestamp": datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
             }
-            
-            save_ping_result(user, url, "error", 0, str(e))
-            socketio.emit('ping_update', result)
-        
+
+            save_ping_result(user, check_id, url, "error", 0, str(e))
+            error_count += 1
+            socketio.emit("ping_update", result)
+
+        if error_count >= error_threshold and notify_email:
+            emails = [e.strip() for e in notify_email.split(';') if e.strip()]
+            send_notification(emails, url, name, f"URL vrací chybu {error_count}x za sebou")
+            error_count = 0
+
         time.sleep(interval)
 
-def start_check(url: str, interval: int, user: str, check_id: str = None):
+def start_check(
+    url: str,
+    interval: int,
+    user: str,
+    check_id: str = None,
+    error_threshold: int = 3,
+    notify_email: str = "",
+    name: str = "",
+):
     """Spustí nový check"""
     if check_id is None:
         check_id = str(uuid.uuid4())
-    
+
     stop_event = threading.Event()
-    thread = threading.Thread(target=ping_worker, args=(url, interval, user, check_id, stop_event))
+    thread = threading.Thread(
+        target=ping_worker,
+        args=(url, interval, user, check_id, stop_event, error_threshold, notify_email, name),
+    )
     thread.daemon = True
-    
+
     active_checks[check_id] = {
         "url": url,
         "interval": interval,
         "user": user,
+        "name": name,
+        "error_threshold": error_threshold,
+        "notify_email": notify_email,
+        "error_count": 0,
         "stop_event": stop_event,
         "thread": thread
     }
@@ -164,6 +355,55 @@ def stop_check(check_id: str):
         del active_checks[check_id]
         save_active_checks()
 
+def pause_check(check_id: str, minutes: int):
+    """Pozastaví check na daný počet minut"""
+    if check_id in active_checks:
+        data = active_checks[check_id]
+        data["stop_event"].set()
+        data["thread"].join(timeout=1)
+        data["paused_until"] = time.time() + minutes * 60
+        data["status"] = "paused"
+        save_active_checks()
+        socketio.emit("check_paused", {"check_id": check_id})
+
+def resume_check(check_id: str):
+    """Obnoví pozastavený check"""
+    if check_id in active_checks:
+        data = active_checks[check_id]
+        if data.get("status") == "paused":
+            start_check(
+                data["url"],
+                data["interval"],
+                data["user"],
+                check_id,
+                data.get("error_threshold", 3),
+                data.get("notify_email", ""),
+                data.get("name", "")
+            )
+            data.pop("paused_until", None)
+            data.pop("status", None)
+            socketio.emit("check_resumed", {"check_id": check_id})
+
+def resume_worker():
+    """Průběžně kontroluje pozastavené checky a případně je spouští"""
+    while True:
+        now = time.time()
+        for check_id, data in list(active_checks.items()):
+            pause_until = data.get("paused_until")
+            if pause_until and now >= pause_until:
+                start_check(
+                    data["url"],
+                    data["interval"],
+                    data["user"],
+                    check_id,
+                    data.get("error_threshold", 3),
+                    data.get("notify_email", ""),
+                    data.get("name", "")
+                )
+                data.pop("paused_until", None)
+                data.pop("status", None)
+        time.sleep(1)
+
 # Flask routes
 @app.route('/')
 def index():
@@ -173,10 +413,11 @@ def index():
     user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
     history = load_user_history(session['username'])
     
-    return render_template('index.html', 
+    return render_template('index.html',
                          username=session['username'],
                          active_checks=user_checks,
-                         history=history)
+                         history=history,
+                         popup=popup_settings)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -196,6 +437,133 @@ def logout():
     flash('Byl jste odhlášen', 'info')
     return redirect(url_for('login'))
 
+
+@app.route('/check/<check_id>', methods=['GET', 'POST'])
+def check_settings(check_id):
+    if check_id not in active_checks:
+        flash('Check neexistuje', 'danger')
+        return redirect(url_for('index'))
+
+    check = active_checks[check_id]
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'save')
+        if action == 'pause':
+            minutes = int(request.form.get('pause_minutes', 1))
+            pause_check(check_id, minutes)
+            flash('Check pozastaven', 'info')
+            return redirect(url_for('check_settings', check_id=check_id))
+        elif action == 'delete':
+            stop_check(check_id)
+            flash(f"Check '{check.get('name','')}' na {check['url']} (interval {check['interval']}s) byl smazán", 'info')
+            return redirect(url_for('index'))
+        else:
+            interval = int(request.form.get('interval', check['interval']))
+            threshold = int(request.form.get('threshold', check.get('error_threshold', 3)))
+            email = request.form.get('email', check.get('notify_email', ''))
+            name = request.form.get('name', check.get('name', ''))
+
+            stop_check(check_id)
+            start_check(check['url'], interval, check['user'], check_id, threshold, email, name)
+            flash('Nastavení uloženo', 'info')
+            return redirect(url_for('check_settings', check_id=check_id))
+
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    sort = request.args.get('sort', 'desc')
+
+    history_all = load_check_history(check_id)
+    if sort == 'asc':
+        history_all = list(reversed(history_all))
+
+    total = len(history_all)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    history = history_all[start_idx:end_idx]
+
+    stats = compute_check_stats(check, history_all)
+    chart_labels = [h['timestamp'].split(' ')[1] for h in history_all[-20:]][::-1]
+    chart_times = [float(h['response_time']) for h in history_all[-20:]][::-1]
+
+    paused_until = None
+    if check.get('paused_until'):
+        paused_until = datetime.fromtimestamp(check['paused_until']).strftime('%H:%M:%S')
+
+    back_url = request.referrer or url_for('index')
+    return render_template(
+        'check_settings.html',
+        check_id=check_id,
+        check=check,
+        history=history,
+        page=page,
+        pages=pages,
+        per_page=per_page,
+        sort=sort,
+        stats=stats,
+        chart_labels=json.dumps(chart_labels),
+        chart_times=json.dumps(chart_times),
+        paused_until=paused_until,
+        popup=popup_settings,
+        username=session.get('username'),
+        back_url=back_url
+    )
+
+@app.route('/check/<check_id>/history_json')
+def check_history_json(check_id):
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    sort = request.args.get('sort', 'desc')
+    history_all = load_check_history(check_id)
+    if sort == 'asc':
+        history_all = list(reversed(history_all))
+    total = len(history_all)
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    history = history_all[start_idx:end_idx]
+    return jsonify({'history': history, 'page': page, 'pages': pages})
+
+@app.route('/advanced_settings', methods=['GET', 'POST'])
+def advanced_settings():
+    if request.method == 'POST':
+        email_settings['recipients'] = request.form.get('recipients', '')
+        email_settings['subject'] = request.form.get('subject', '')
+        email_settings['body'] = request.form.get('body', '')
+        smtp = email_settings.get('smtp', {})
+        smtp['server'] = request.form.get('smtp_server', 'localhost')
+        smtp['port'] = int(request.form.get('smtp_port', 25))
+        smtp['username'] = request.form.get('smtp_user', '')
+        smtp['password'] = request.form.get('smtp_pass', '')
+        email_settings['smtp'] = smtp
+        save_email_settings()
+        popup_settings['info'] = {
+            'width': int(request.form.get('info_width', 300)),
+            'height': int(request.form.get('info_height', 60)),
+            'color': request.form.get('info_color', '#d1ecf1'),
+            'text': request.form.get('info_text', '{message}')
+        }
+        popup_settings['delete'] = {
+            'width': int(request.form.get('del_width', 300)),
+            'height': int(request.form.get('del_height', 60)),
+            'color': request.form.get('del_color', '#f8d7da'),
+            'text': request.form.get('del_text', '{message}')
+        }
+        save_popup_settings()
+        load_popup_settings()
+        flash('Nastavení uloženo', 'info')
+        return redirect(url_for('advanced_settings'))
+    settings = email_settings if email_settings else {
+        'recipients': '',
+        'subject': '',
+        'body': '',
+        'smtp': { 'server': 'localhost', 'port': 25, 'username': '', 'password': '' }
+    }
+    load_popup_settings()
+    return render_template('advanced_settings.html', settings=settings, popup=popup_settings, username=session.get('username'))
+
 # SocketIO handlers
 @socketio.on('start_monitoring')
 def handle_start_monitoring(data):
@@ -204,15 +572,30 @@ def handle_start_monitoring(data):
     
     url = data['url']
     interval = int(data['interval'])
+    name = data.get('name', '')
+    threshold = 3
+    email = ''
     user = session['username']
-    
-    check_id = start_check(url, interval, user)
-    
+
+    check_id = start_check(url, interval, user, None, threshold, email, name)
+
     emit('check_started', {
         'check_id': check_id,
         'url': url,
+        'name': name,
         'interval': interval
     })
+
+@socketio.on('pause_monitoring')
+def handle_pause_monitoring(data):
+    check_id = data['check_id']
+    minutes = int(data.get('minutes', 1))
+    pause_check(check_id, minutes)
+
+@socketio.on('resume_monitoring')
+def handle_resume_monitoring(data):
+    check_id = data['check_id']
+    resume_check(check_id)
 
 @socketio.on('stop_monitoring')
 def handle_stop_monitoring(data):
@@ -229,10 +612,23 @@ def handle_get_history():
 @socketio.on('get_active_checks')
 def handle_get_active_checks():
     if 'username' in session:
-        user_checks = {k: v for k, v in active_checks.items() if v['user'] == session['username']}
-        emit('active_checks_update', user_checks)
+        user = session['username']
+        sanitized = {}
+        for cid, data in active_checks.items():
+            if data['user'] != user:
+                continue
+            sanitized[cid] = {
+                'url': data['url'],
+                'interval': data['interval'],
+                'status': data.get('status', 'active'),
+                'name': data.get('name', '')
+            }
+        emit('active_checks_update', sanitized)
 
 if __name__ == '__main__':
     # Načti aktivní checky při startu
     load_active_checks()
+    load_email_settings()
+    load_popup_settings()
+    threading.Thread(target=resume_worker, daemon=True).start()
     socketio.run(app, host='127.0.0.1', port=5050, debug=True)

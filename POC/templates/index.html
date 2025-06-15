@@ -164,6 +164,7 @@
         <div>
             {% if username %}
                 <span>Přihlášen jako: <strong>{{ username }}</strong></span>
+                <a href="{{ url_for('advanced_settings') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">⚙️ Pokročilé nastavení</a>
                 <a href="{{ url_for('logout') }}" style="margin-left:15px;color:#007bff;text-decoration:none;">🚪 Odhlásit se</a>
             {% endif %}
         </div>
@@ -185,6 +186,10 @@
             <div class="controls">
                 <h2>🚀 Nový monitoring</h2>
                 <form id="monitorForm">
+                    <div class="form-group">
+                        <label for="nameInput">Název checku:</label>
+                        <input type="text" id="nameInput" placeholder="Moje služba">
+                    </div>
                     <div class="form-group">
                         <label for="urlInput">URL adresa:</label>
                         <input type="url" id="urlInput" placeholder="https://example.com" required>
@@ -209,6 +214,7 @@
                 <table class="active-checks-table" id="activeChecksTable">
                     <thead>
                         <tr>
+                            <th>Název</th>
                             <th>URL</th>
                             <th>Interval</th>
                             <th>Poslední výsledek</th>
@@ -218,6 +224,7 @@
                     <tbody id="activeChecksBody">
                         {% for check_id, data in active_checks.items() %}
                         <tr id="row-{{ check_id }}">
+                            <td>{{ data.name }}</td>
                             <td>{{ data.url }}</td>
                             <td>{{ data.interval }}s</td>
                             <td id="status-{{ check_id }}">🟢 Aktivní</td>
@@ -230,7 +237,7 @@
                         {% endfor %}
                         {% if not active_checks %}
                         <tr id="emptyRow">
-                            <td colspan="4" class="empty-state">Žádné aktivní checky</td>
+                            <td colspan="5" class="empty-state">Žádné aktivní checky</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -277,20 +284,24 @@
             tbody.innerHTML = '';
             const entries = Object.entries(checks);
             if (entries.length === 0) {
-                tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+                tbody.innerHTML = '<tr id="emptyRow"><td colspan="5" class="empty-state">Žádné aktivní checky</td></tr>';
                 return;
             }
             for (const [cid, data] of entries) {
                 const row = document.createElement('tr');
                 row.id = `row-${cid}`;
                 const status = data.status === 'paused' ? '⏸️ Pozastaveno' : '🟢 Aktivní';
+                const actionBtn = data.status === 'paused'
+                    ? `<button class="btn btn-primary" onclick="resumeMonitoring('${cid}')">▶️ Spustit</button>`
+                    : `<button class="btn btn-primary" onclick="pauseMonitoring('${cid}')">⏸️ Pozastavit</button>`;
                 row.innerHTML = `
+                    <td>${data.name || ''}</td>
                     <td>${data.url}</td>
                     <td>${data.interval}s</td>
                     <td id="status-${cid}">${status}</td>
                     <td>
                         <button class="btn btn-primary" onclick="window.location.href='/check/${cid}'">⚙️ Nastavení</button>
-                        <button class="btn btn-primary" onclick="pauseMonitoring('${cid}')">⏸️ Pozastavit</button>
+                        ${actionBtn}
                         <button class="btn btn-danger" onclick="stopMonitoring('${cid}')">⏹️ Zastavit</button>
                     </td>
                 `;
@@ -324,6 +335,7 @@
             const newRow = document.createElement('tr');
             newRow.id = `row-${data.check_id}`;
             newRow.innerHTML = `
+                <td>${data.name || ''}</td>
                 <td>${data.url}</td>
                 <td>${data.interval}s</td>
                 <td id="status-${data.check_id}">🟢 Aktivní</td>
@@ -334,8 +346,9 @@
                 </td>
             `;
             tbody.appendChild(newRow);
-            
+
             // Vyčistit formulář
+            document.getElementById('nameInput').value = '';
             document.getElementById('urlInput').value = '';
         });
 
@@ -350,7 +363,7 @@
             // Přidat prázdný řádek pokud už nejsou žádné checky
             const tbody = document.getElementById('activeChecksBody');
             if (tbody.children.length === 0) {
-                tbody.innerHTML = '<tr id="emptyRow"><td colspan="4" class="empty-state">Žádné aktivní checky</td></tr>';
+                tbody.innerHTML = '<tr id="emptyRow"><td colspan="5" class="empty-state">Žádné aktivní checky</td></tr>';
             }
         });
 
@@ -359,6 +372,29 @@
             const statusCell = document.getElementById(`status-${data.check_id}`);
             if (statusCell) {
                 statusCell.innerHTML = '⏸️ Pozastaveno';
+            }
+            const row = document.getElementById(`row-${data.check_id}`);
+            if (row) {
+                const btn = row.querySelector('button[onclick^="pauseMonitoring"]');
+                if (btn) {
+                    btn.textContent = '▶️ Spustit';
+                    btn.setAttribute('onclick', `resumeMonitoring('${data.check_id}')`);
+                }
+            }
+        });
+
+        socket.on('check_resumed', function(data) {
+            const statusCell = document.getElementById(`status-${data.check_id}`);
+            if (statusCell) {
+                statusCell.innerHTML = '🟢 Aktivní';
+            }
+            const row = document.getElementById(`row-${data.check_id}`);
+            if (row) {
+                const btn = row.querySelector('button[onclick^="resumeMonitoring"]');
+                if (btn) {
+                    btn.textContent = '⏸️ Pozastavit';
+                    btn.setAttribute('onclick', `pauseMonitoring('${data.check_id}')`);
+                }
             }
         });
 
@@ -428,6 +464,7 @@
         function startMonitoring() {
             const url = document.getElementById('urlInput').value;
             const interval = document.getElementById('intervalSelect').value;
+            const name = document.getElementById('nameInput').value;
             
             if (!url) {
                 alert('Zadejte platnou URL adresu!');
@@ -436,7 +473,8 @@
             
             socket.emit('start_monitoring', {
                 url: url,
-                interval: interval
+                interval: interval,
+                name: name
             });
         }
 
@@ -445,6 +483,12 @@
             socket.emit('pause_monitoring', {
                 check_id: checkId,
                 minutes: 1
+            });
+        }
+
+        function resumeMonitoring(checkId) {
+            socket.emit('resume_monitoring', {
+                check_id: checkId
             });
         }
 

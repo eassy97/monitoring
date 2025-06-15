@@ -197,6 +197,14 @@
                             <option value="60">🕛 1 minuta</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label for="thresholdInput">Počet chyb pro notifikaci:</label>
+                        <input type="number" id="thresholdInput" value="3" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="emailInput">E-mail pro notifikace:</label>
+                        <input type="email" id="emailInput" placeholder="user@example.com">
+                    </div>
                     <button type="button" class="btn btn-primary" onclick="startMonitoring()">
                         ▶️ Spustit monitoring
                     </button>
@@ -222,9 +230,8 @@
                             <td>{{ data.interval }}s</td>
                             <td id="status-{{ check_id }}">🟢 Aktivní</td>
                             <td>
-                                <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">
-                                    ⏹️ Zastavit
-                                </button>
+                                <button class="btn btn-primary" onclick="window.location.href='{{ url_for('check_settings', check_id=check_id) }}'">⚙️ Nastavení</button>
+                                <button class="btn btn-danger" onclick="stopMonitoring('{{ check_id }}')">⏹️ Zastavit</button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -298,15 +305,16 @@
                 <td>${data.interval}s</td>
                 <td id="status-${data.check_id}">🟢 Aktivní</td>
                 <td>
-                    <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">
-                        ⏹️ Zastavit
-                    </button>
+                    <button class="btn btn-primary" onclick="window.location.href='/check/${data.check_id}'">⚙️ Nastavení</button>
+                    <button class="btn btn-danger" onclick="stopMonitoring('${data.check_id}')">⏹️ Zastavit</button>
                 </td>
             `;
             tbody.appendChild(newRow);
             
             // Vyčistit formulář
             document.getElementById('urlInput').value = '';
+            document.getElementById('thresholdInput').value = '3';
+            document.getElementById('emailInput').value = '';
         });
 
         // Check byl zastaven
@@ -396,9 +404,14 @@
                 return;
             }
             
+            const threshold = document.getElementById('thresholdInput').value;
+            const email = document.getElementById('emailInput').value;
+
             socket.emit('start_monitoring', {
                 url: url,
-                interval: interval
+                interval: interval,
+                threshold: threshold,
+                email: email
             });
         }
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Nastavení checku</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+        th, td { padding: 8px; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; }
+        .form-group { margin-bottom: 10px; }
+        input { padding: 5px; width: 100%; }
+        .btn { padding: 8px 15px; border: none; background: #007bff; color: white; cursor: pointer; margin-top: 10px; }
+        a { text-decoration: none; color: #007bff; }
+    </style>
+</head>
+<body>
+    <h2>Nastavení checku</h2>
+    <p><strong>URL:</strong> {{ check.url }}</p>
+    <form method="POST">
+        <div class="form-group">
+            <label>Interval (s):</label>
+            <input type="number" name="interval" value="{{ check.interval }}" min="1">
+        </div>
+        <div class="form-group">
+            <label>Počet chyb pro notifikaci:</label>
+            <input type="number" name="threshold" value="{{ check.error_threshold }}" min="1">
+        </div>
+        <div class="form-group">
+            <label>E-mail pro notifikace:</label>
+            <input type="email" name="email" value="{{ check.notify_email }}">
+        </div>
+        <button type="submit" class="btn">Uložit</button>
+    </form>
+    <h3>Historie běhů</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Čas</th>
+                <th>Stav</th>
+                <th>Odezva</th>
+                <th>Zpráva</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in history %}
+            <tr>
+                <td>{{ item.timestamp }}</td>
+                <td>{{ item.status }}</td>
+                <td>{{ item.response_time }}ms</td>
+                <td>{{ item.message }}</td>
+            </tr>
+            {% endfor %}
+            {% if not history %}
+            <tr><td colspan="4">Žádné záznamy</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    <p><a href="{{ url_for('index') }}">&larr; Zpět</a></p>
+</body>
+</html>
